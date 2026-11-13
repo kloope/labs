@@ -1,0 +1,339 @@
+// ЛР №3. Вариант 27: «Учет результатов тестирования по иностранным языкам»
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <list>
+#include <array>
+#include <string>
+#include <algorithm>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+using namespace std;
+
+string input(const string& msg) { cout << msg; string s; getline(cin, s); return s; }
+int inputInt(const string& msg) { try { return stoi(input(msg)); } catch (...) { return -1; } }
+
+
+class Language {
+public:
+    string name;
+    Language(string n = "") : name(n) {}
+    bool empty() const { return name.empty(); }
+    bool matches(const string& part) const { return name.find(part) != string::npos; }
+    void printRow(ostream& o, int n) const { o << n << "\t" << name << "\n"; }
+    void save(ostream& o) const { o << "L|" << name << "\n"; }
+};
+
+
+class Person {
+protected:
+    string name;
+public:
+    Person(string n = "") : name(n) {}
+    virtual ~Person() {}
+    string getName() const { return name; }
+    void setName(const string& n) { name = n; }
+    bool matches(const string& part) const { return name.find(part) != string::npos; }
+};
+
+
+class Student : public Person {
+public:
+    int id;
+    string language; // изучаемый язык (связь с Language по названию)
+    Student(int i = 0, string n = "", string l = "") : Person(n), id(i), language(l) {}
+    void printRow(ostream& o, int n) const {
+        o << n << "\t" << id << "\t" << name << "\t" << language << "\n";
+    }
+    void save(ostream& o) const { o << "S|" << id << "|" << name << "|" << language << "\n"; }
+};
+
+
+class Score {
+public:
+    int points; // 0..100
+    Score(int p = 0) : points(p) {}
+    int mark() const { return points / 10; } // 10-балльная оценка
+};
+
+
+class TestResult {
+public:
+    Student* student;
+    string date;
+    Score score;      
+    TestResult(Student* s = nullptr, string d = "", int p = 0) : student(s), date(d), score(p) {}
+    bool matches(const string& part) const { return student->matches(part); }
+    void printRow(ostream& o, int n) const {
+        o << n << "\t" << student->getName() << "\t" << student->language << "\t"
+            << date << "\t" << score.points << "\t" << score.mark() << "\n";
+    }
+    void save(ostream& o) const { o << "R|" << student->id << "|" << date << "|" << score.points << "\n"; }
+};
+
+class LanguageStorage {
+    array<Language, 5> items;
+public:
+    bool valid(int i) const { return i >= 0 && i < (int)items.size() && !items[i].empty(); }
+    bool add(const string& name) {
+        for (auto& l : items) if (l.empty()) { l.name = name; return true; }
+        return false; // массив заполнен
+    }
+    bool remove(int i) { if (!valid(i)) return false; items[i].name = ""; return true; }
+    bool edit(int i, const string& name) { if (!valid(i)) return false; items[i].name = name; return true; }
+    void print(ostream& o) const {
+        o << "\n=== Языки (array) ===\n№\tЯзык\n";
+        for (size_t i = 0; i < items.size(); i++) if (!items[i].empty()) items[i].printRow(o, i + 1);
+    }
+    void search(const string& part) const {
+        for (auto& l : items) if (!l.empty() && l.matches(part)) cout << l.name << "\n";
+    }
+    void sortByName() {
+        std::sort(items.begin(), items.end(), [](const Language& a, const Language& b) {
+            if (a.empty()) return false;
+            if (b.empty()) return true;
+            return a.name < b.name;
+            });
+    }
+    void clear() { for (auto& l : items) l.name = ""; }
+    void save(ostream& o) const { for (auto& l : items) if (!l.empty()) l.save(o); }
+};
+
+
+class StudentStorage {
+    list<Student> items;
+    int nextId = 1;
+public:
+    void add(const string& name, const string& lang) { items.push_back(Student(nextId++, name, lang)); }
+    void addWithId(int id, const string& name, const string& lang) {
+        items.push_back(Student(id, name, lang));
+        nextId = max(nextId, id + 1);
+    }
+    Student* get(int i) {
+        if (i < 0 || i >= (int)items.size()) return nullptr;
+        auto it = items.begin();
+        advance(it, i);
+        return &*it;
+    }
+    Student* findById(int id) {
+        for (auto& s : items) if (s.id == id) return &s;
+        return nullptr;
+    }
+    bool remove(int i) {
+        Student* p = get(i);
+        if (!p) return false;
+        items.remove_if([p](const Student& s) { return &s == p; });
+        return true;
+    }
+    bool edit(int i, const string& name, const string& lang) {
+        Student* p = get(i);
+        if (!p) return false;
+        p->setName(name);
+        p->language = lang;
+        return true;
+    }
+    void print(ostream& o, const string& lang = "") const { // lang – фильтр по языку
+        o << "\n=== Студенты (list) ===\n№\tID\tФИО\tЯзык\n";
+        int n = 1;
+        for (auto& s : items) if (lang.empty() || s.language == lang) s.printRow(o, n++);
+    }
+    void search(const string& part) const {
+        for (auto& s : items) if (s.matches(part)) s.printRow(cout, s.id);
+    }
+    void sortByName() {
+        items.sort([](const Student& a, const Student& b) { return a.getName() < b.getName(); });
+    }
+    void clear() { items.clear(); nextId = 1; }
+    void save(ostream& o) const { for (auto& s : items) s.save(o); }
+};
+
+
+class ResultStorage {
+    vector<TestResult> items;
+public:
+    void add(Student* s, const string& date, int points) { items.push_back(TestResult(s, date, points)); }
+    bool remove(int i) {
+        if (i < 0 || i >= (int)items.size()) return false;
+        items.erase(items.begin() + i);
+        return true;
+    }
+    bool edit(int i, const string& date, int points) {
+        if (i < 0 || i >= (int)items.size()) return false;
+        items[i].date = date;
+        items[i].score.points = points;
+        return true;
+    }
+    void removeByStudent(Student* s) {
+        items.erase(remove_if(items.begin(), items.end(),
+            [s](const TestResult& r) { return r.student == s; }), items.end());
+    }
+    void print(ostream& o, int minPoints = 0) const { // minPoints – фильтр по баллам
+        o << "\n=== Результаты тестов (vector) ===\n№\tСтудент\tЯзык\tДата\tБаллы\tОценка\n";
+        for (size_t i = 0; i < items.size(); i++)
+            if (items[i].score.points >= minPoints) items[i].printRow(o, i + 1);
+    }
+    void search(const string& part) const {
+        for (size_t i = 0; i < items.size(); i++) if (items[i].matches(part)) items[i].printRow(cout, i + 1);
+    }
+    void sortByPoints() {
+        std::sort(items.begin(), items.end(),
+            [](const TestResult& a, const TestResult& b) { return a.score.points > b.score.points; });
+    }
+    void clear() { items.clear(); }
+    void save(ostream& o) const { for (auto& r : items) r.save(o); }
+};
+
+class Registry {
+    LanguageStorage languages;
+    StudentStorage students;
+    ResultStorage results;
+
+    static vector<string> split(const string& s) {
+        vector<string> v; string t;
+        for (char ch : s) { if (ch == '|') { v.push_back(t); t = ""; } else t += ch; }
+        v.push_back(t);
+        return v;
+    }
+
+public:
+    void printAll(ostream& o) const { languages.print(o); students.print(o); results.print(o); }
+
+    bool removeStudent(int i) {
+        Student* p = students.get(i);
+        if (!p) return false;
+        results.removeByStudent(p);
+        return students.remove(i);
+    }
+
+    void saveData(const string& fn = "data.txt") const {
+        ofstream f(fn);
+        languages.save(f);
+        students.save(f);
+        results.save(f);
+        cout << "Данные выгружены в " << fn << "\n";
+    }
+
+    void loadData(const string& fn = "data.txt") {
+        ifstream f(fn);
+        if (!f) { cout << "Файл " << fn << " не найден\n"; return; }
+        results.clear(); students.clear(); languages.clear();
+        string line;
+        while (getline(f, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            auto v = split(line);
+            if (v[0] == "L" && v.size() >= 2) languages.add(v[1]);
+            else if (v[0] == "S" && v.size() >= 4) students.addWithId(stoi(v[1]), v[2], v[3]);
+            else if (v[0] == "R" && v.size() >= 4) {
+                Student* s = students.findById(stoi(v[1]));
+                if (s) results.add(s, v[2], stoi(v[3]));
+            }
+        }
+        cout << "Данные загружены из " << fn << "\n";
+    }
+    void langMenu() {
+        int c;
+        do {
+            cout << "\n--- Языки (array) ---\n"
+                << "1. Вывод\n2. Добавить\n3. Удалить\n4. Изменить\n5. Поиск\n"
+                << "6. Сортировка\n7. В файл\n0. Назад\n";
+            c = inputInt("> ");
+            if (c == 1) languages.print(cout);
+            else if (c == 2) { if (!languages.add(input("Название: "))) cout << "Массив заполнен\n"; }
+            else if (c == 3) { languages.print(cout); if (!languages.remove(inputInt("Номер: ") - 1)) cout << "Нет такого\n"; }
+            else if (c == 4) {
+                languages.print(cout);
+                int i = inputInt("Номер: ") - 1;
+                if (!languages.edit(i, input("Новое название: "))) cout << "Нет такого\n";
+            }
+            else if (c == 5) languages.search(input("Часть названия: "));
+            else if (c == 6) { languages.sortByName(); languages.print(cout); }
+            else if (c == 7) { ofstream f("languages.txt"); languages.print(f); cout << "Сохранено в languages.txt\n"; }
+        } while (c != 0);
+    }
+
+
+    void studentMenu() {
+        int c;
+        do {
+            cout << "\n--- Студенты (list) ---\n"
+                << "1. Вывод\n2. Добавить\n3. Удалить\n4. Изменить\n5. Поиск\n"
+                << "6. Сортировка\n7. Фильтр по языку\n8. В файл\n0. Назад\n";
+            c = inputInt("> ");
+            if (c == 1) students.print(cout);
+            else if (c == 2) { string n = input("ФИО: "); students.add(n, input("Язык: ")); }
+            else if (c == 3) { students.print(cout); if (!removeStudent(inputInt("Номер: ") - 1)) cout << "Нет такого\n"; }
+            else if (c == 4) {
+                students.print(cout);
+                int i = inputInt("Номер: ") - 1;
+                string n = input("Новое ФИО: ");
+                if (!students.edit(i, n, input("Новый язык: "))) cout << "Нет такого\n";
+            }
+            else if (c == 5) students.search(input("Часть ФИО: "));
+            else if (c == 6) { students.sortByName(); students.print(cout); }
+            else if (c == 7) students.print(cout, input("Язык: "));
+            else if (c == 8) { ofstream f("students.txt"); students.print(f); cout << "Сохранено в students.txt\n"; }
+        } while (c != 0);
+    }
+
+    void resultMenu() {
+        int c;
+        do {
+            cout << "\n--- Результаты (vector) ---\n"
+                << "1. Вывод\n2. Добавить\n3. Удалить\n4. Изменить\n5. Поиск\n"
+                << "6. Сортировка\n7. Фильтр по баллам\n8. В файл\n0. Назад\n";
+            c = inputInt("> ");
+            if (c == 1) results.print(cout);
+            else if (c == 2) {
+                students.print(cout);
+                Student* s = students.findById(inputInt("ID студента: "));
+                if (!s) { cout << "Студент не найден\n"; continue; }
+                string d = input("Дата: ");
+                results.add(s, d, inputInt("Баллы (0-100): "));
+            }
+            else if (c == 3) { results.print(cout); if (!results.remove(inputInt("Номер: ") - 1)) cout << "Нет такого\n"; }
+            else if (c == 4) {
+                results.print(cout);
+                int i = inputInt("Номер: ") - 1;
+                string d = input("Новая дата: ");
+                if (!results.edit(i, d, inputInt("Новые баллы: "))) cout << "Нет такого\n";
+            }
+            else if (c == 5) results.search(input("Часть ФИО студента: "));
+            else if (c == 6) { results.sortByPoints(); results.print(cout); }
+            else if (c == 7) results.print(cout, inputInt("Минимум баллов: "));
+            else if (c == 8) { ofstream f("results.txt"); results.print(f); cout << "Сохранено в results.txt\n"; }
+        } while (c != 0);
+    }
+
+
+    void run() {
+        loadData(); 
+        int c;
+        do {
+            cout << "\n===== УЧЕТ РЕЗУЛЬТАТОВ ТЕСТИРОВАНИЯ ПО ИНОСТРАННЫМ ЯЗЫКАМ =====\n"
+                << "1. Языки (array)\n2. Студенты (list)\n3. Результаты (vector)\n"
+                << "4. Вывести все данные на экран\n5. Сохранить таблицы в файл (report.txt)\n"
+                << "6. Загрузить данные из файла (data.txt)\n7. Выгрузить данные в файл (data.txt)\n"
+                << "0. Выход\n";
+            c = inputInt("> ");
+            if (c == 1) langMenu();
+            else if (c == 2) studentMenu();
+            else if (c == 3) resultMenu();
+            else if (c == 4) printAll(cout);
+            else if (c == 5) { ofstream f("report.txt"); printAll(f); cout << "Сохранено в report.txt\n"; }
+            else if (c == 6) loadData();
+            else if (c == 7) saveData();
+        } while (c != 0);
+        saveData(); 
+    }
+};
+
+int main() {
+#ifdef _WIN32
+    SetConsoleCP(65001);
+    SetConsoleOutputCP(65001);
+#endif
+    Registry app;
+    app.run();
+    return 0;
+}
